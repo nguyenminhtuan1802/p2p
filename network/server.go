@@ -4,24 +4,30 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net"
-	"strconv"
 	"regexp"
+	"strconv"
+	"strings"
 	"tnguyen/blockchainexample/utility"
 )
 
 type Server struct {
-	Protocol string
-	Address  string
-	Listener *net.Listener
-	Connections []*net.Conn
-	Channel	chan int
+	Protocol 		string
+	Address  		string
+	Listener 		*net.Listener
+	Connections 	[]*net.Conn
+	DataProvider	TransactionDataProvider
+	Running			bool
 }
 
-func ServerConstructor(protocol string, address string, ch chan int) *Server {
+type TransactionDataProvider interface {
+	GetTransactionData(index int) int
+}
+
+func ServerConstructor(protocol string, address string, dataProvider TransactionDataProvider) *Server {
 	server := new(Server)
 	server.Protocol = protocol
 	server.Address = address
-	server.Channel = ch
+	server.DataProvider = dataProvider
 	listener, err := net.Listen(server.Protocol, server.Address)
 	utility.CheckError(err, "[SERVER] Start Exception")
 	server.Listener = &listener
@@ -36,6 +42,7 @@ func (s *Server) Start() {
 	}
 
 	fmt.Println("[SERVER] Starting")
+	s.Running = true
 	for {
 		// accept a connection
 		connection, err := (*s.Listener).Accept()
@@ -78,10 +85,12 @@ func (s *Server) ReceiveFromClient(c *net.Conn) {
 	for {
 		err := gob.NewDecoder(*c).Decode(&msg)
 		if err == nil {
-			
-			if (msg == "QUERY") {
-				nodeData := <-s.Channel
-				go s.SendToClient(c, strconv.Itoa(nodeData))
+			messages := strings.Split(msg,",")
+			if (messages[0] == "QUERY") {
+				index,e := strconv.Atoi(messages[1])
+				utility.CheckError(e, "[SERVER] ")
+				data := s.DataProvider.GetTransactionData(index)
+				go s.SendToClient(c, strconv.Itoa(data))
 			} else {
 				//fmt.Println("[SERVER ", (*s.Listener).Addr().String(), "] Received from [CLIENT ", (*c).LocalAddr().String(), " ] ", msg)
 				go s.SendToClient(c, "Reply to" + msg)
@@ -101,4 +110,5 @@ func (s *Server) ShutDown() {
 		s.DisconnectClient(c)
 	}
 	(*s.Listener).Close()
+	s.Running = false
 }

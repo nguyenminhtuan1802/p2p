@@ -2,134 +2,118 @@ package consensus
 
 import (
 	"fmt"
-	"tnguyen/blockchainexample/network"
 	"math/rand"
+	"strconv"
+	"tnguyen/blockchainexample/network"
+	"tnguyen/blockchainexample/transaction"
+
 )
 
-
 type SnowballConsensusOptions struct {
-	M int //participants
-	K int //sample size
-	Alpha int //quarum size
-	Beta int //decision threshold 
-	TransactionConsensusThreshold int //threshold to update public transaction
+	M                             int //participants
+	K                             int //sample size
+	Alpha                         int //quarum size
+	Beta                          int //decision threshold
 }
 
 type TransactionValidator struct {
-	OldPreference int
+	OldPreference      int
 	ConsecutiveSuccess int
-	Decided bool
-	Seed int
+	Decided            bool
+	Seed               int
 }
 
 type SnowballConsensusValidator struct {
-	Net		 		*network.P2P
-	TransValidator	map[int]*TransactionValidator
-	Options			SnowballConsensusOptions	
-	Iteration		int // DEBUG	
+	Node           *network.Node
+	TransValidator *TransactionValidator
+	Options        SnowballConsensusOptions
+	Iteration      int // DEBUG
 }
 
-func CreateSnowballConsensus(net *network.P2P, opt SnowballConsensusOptions) *SnowballConsensusValidator {
+func CreateSnowballConsensus(node *network.Node, opt SnowballConsensusOptions) *SnowballConsensusValidator {
 	v := new(SnowballConsensusValidator)
-	v.Net = net
+	v.Node = node
 	v.Options = opt
-	v.TransValidator = make(map[int]*TransactionValidator)
-	for _, n := range net.Nodes {
-		validator := new(TransactionValidator)
-		validator.OldPreference = 0
-		validator.ConsecutiveSuccess = 0
-		validator.Decided = false
-		validator.Seed = n.Id		
-		v.TransValidator[n.Id] = validator
-	}
-	v.Iteration = 1
+
+	v.TransValidator = new(TransactionValidator)
+	v.TransValidator.OldPreference = 0
+	v.TransValidator.ConsecutiveSuccess = 0
+	v.TransValidator.Decided = false
+	v.TransValidator.Seed = node.Id
+
+	v.Iteration = 1 // TODO: remove
 	return v
 }
 
 func (validator *SnowballConsensusValidator) Update() bool {
-	fmt.Println("ITERATION: ", validator.Iteration)
-	decidedCount := 0 // number of nodes have decided its consensus on this transaction
+	fmt.Println("[NODE ", validator.Node.Id, "]  ITERATION: ", validator.Iteration)
 	consensusValue := 0 // the final transaction data (e.g.transaction id)
-	for _, n := range validator.Net.Nodes {
 
-		// Find k peers of node n
-		r := rand.New(rand.NewSource(int64((*validator.TransValidator[n.Id]).Seed)))
+	// Find k peers of node n
+	r := rand.New(rand.NewSource(int64((*validator.TransValidator).Seed)))
 
-		peersToQuery := make(map[int]*network.Client,0)
-		tempK := validator.Options.K
+	peersToQuery := make(map[int]*network.Client, 0)
+	tempK := validator.Options.K
 
-		for tempK > 0 {
-			peerIdx := r.Intn(validator.Options.M) + 1
-			peer, ok := n.Clients[peerIdx]
+	for tempK > 0 {
+		peerIdx := r.Intn(validator.Options.M) + 1
+		peer, ok := validator.Node.Clients[peerIdx]
 
-			if (ok) {
-				_, ok1 := peersToQuery[peerIdx]
-				if (!ok1) {
-					peersToQuery[peerIdx] = peer
-					tempK--
-				}
+		if ok {
+			_, ok1 := peersToQuery[peerIdx]
+			if !ok1 {
+				peersToQuery[peerIdx] = peer
+				tempK--
 			}
-		}
-
-		responseFreqMap := make(map[int]int)
-
-		for _, peer := range peersToQuery {
-			// Ask peer
-			go peer.Send("QUERY")
-			reply := peer.ReceiveOnce()
-			val, ok := responseFreqMap[reply]
-			if (ok) {
-				responseFreqMap[reply] = val + 1
-			} else {
-				responseFreqMap[reply] = 1
-			}
-		}
-
-		// Gather reply
-		cnt := 0
-		perference := 0
-		for res, freq := range responseFreqMap {
-			if (freq > cnt) {
-				perference = res
-				cnt = freq
-			}
-		}
-
-		// Validate based on the current quarum consensus
-		decided, val := (*validator.TransValidator[n.Id]).Validate(&n.PrivateTransactionList.GetCurrentTransaction().Id, perference, cnt, &validator.Options)
-		consensusValue = val
-		if decided  {
-			decidedCount++
 		}
 	}
 
-	fmt.Println("Number of decided nodes is: ", decidedCount)
+	responseFreqMap := make(map[int]int)
+	transactionIndex, transaction := validator.Node.GetNextUndecidedTransaction()
 
-	NextTrans := false
-	Stop := false
-	if (decidedCount > validator.Options.TransactionConsensusThreshold) {
-		for _, n := range validator.Net.Nodes {
-			n.PublicTransactionList.Insert(consensusValue)
-			(*validator.TransValidator[n.Id]).Reset()
-			if (!n.PrivateTransactionList.MoveToNextTransaction()) {
-				Stop = true
-			}
-			NextTrans = true
+	for _, peer := range peersToQuery {
+		// Ask peer
+		go peer.Send("QUERY," + strconv.Itoa(transactionIndex))
+		reply := peer.ReceiveOnce()
+		val, ok := responseFreqMap[reply]
+		if ok {
+			responseFreqMap[reply] = val + 1
+		} else {
+			responseFreqMap[reply] = 1
 		}
 	}
-	
-	if (Stop) {
-		fmt.Println("End of transaction list")
-	} else if (NextTrans)  {			
-		fmt.Println("Move to next transaction")
+
+	// Gather reply
+	cnt := 0
+	perference := 0
+	for res, freq := range responseFreqMap {
+		if freq > cnt {
+			perference = res
+			cnt = freq
+		}
 	}
 
-	return Stop
+	// Validate based on the current quarum consensus
+	decided, val := (*validator.TransValidator).Validate(transaction, perference, cnt, &validator.Options)
+	consensusValue = val
+
+	if decided {
+		validator.Node.PublicTransactionList.Insert(consensusValue)
+		if !validator.Node.PrivateTransactionList.MoveToNextTransaction() {
+			fmt.Println("[NODE ", validator.Node.Id, "]  End of transaction list")
+			return false
+		}
+		fmt.Println("[NODE ", validator.Node.Id, "]  Move to next transaction")
+		(*validator.TransValidator).Reset()
+	}
+
+	validator.Iteration++
+	return true
 }
 
-func (v *TransactionValidator) Validate(data *int, perference int, count int, opt *SnowballConsensusOptions) (bool, int) {
-	if (count >= opt.Alpha) {
-		if (perference == v.OldPreference) {
+func (v *TransactionValidator) Validate(transaction *transaction.Transaction, perference int, count int, opt *SnowballConsensusOptions) (bool, int) {
+	if count >= opt.Alpha {
+		if perference == v.OldPreference {
 			v.ConsecutiveSuccess++
 		} else {
 			v.ConsecutiveSuccess = 1
@@ -139,8 +123,8 @@ func (v *TransactionValidator) Validate(data *int, perference int, count int, op
 		v.ConsecutiveSuccess = 0
 	}
 
-	if (v.ConsecutiveSuccess > opt.Beta) {
-		*data = perference
+	if v.ConsecutiveSuccess > opt.Beta {
+		transaction.Data = perference
 		v.Decided = true
 	}
 	return v.Decided, perference
