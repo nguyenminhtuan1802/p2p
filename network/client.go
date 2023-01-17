@@ -64,6 +64,7 @@ func (c *Client) ReceiveOnce() interface{} {
 	}
 }
 
+// TODO: Run this in a separate thread to push received msg into a queue
 func (c *Client) Receive() {
 	// Wait for valid connection
 	for (c.Connection != nil) {
@@ -76,6 +77,7 @@ func (c *Client) Receive() {
 			//fmt.Println("[SERVER] Receveid from client error:]", err)
 		} else {
 			fmt.Println("[CLIENT ", c.Address, "] Received:", msg)
+			// TODO: push msg to queue for later processing
 		}
 	}
 }
