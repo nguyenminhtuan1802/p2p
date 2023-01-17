@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"os"
 	"tnguyen/blockchainexample/utility"
 )
 
@@ -15,19 +16,23 @@ type Server struct {
 	Address  		string
 	Listener 		*net.Listener
 	Connections 	[]*net.Conn
-	DataProvider	TransactionDataProvider
+	DataHost		DataHost
 	Running			bool
 }
 
-type TransactionDataProvider interface {
+type DataHost interface {
 	GetTransactionData(index int) int
+	Run()
+	ConnectById(protocol string, id int)
+	HasFinished() bool
+	ShutDown()
 }
 
-func ServerConstructor(protocol string, address string, dataProvider TransactionDataProvider) *Server {
+func ServerConstructor(protocol string, address string, dataProvider DataHost) *Server {
 	server := new(Server)
 	server.Protocol = protocol
 	server.Address = address
-	server.DataProvider = dataProvider
+	server.DataHost = dataProvider
 	listener, err := net.Listen(server.Protocol, server.Address)
 	utility.CheckError(err, "[SERVER] Start Exception")
 	server.Listener = &listener
@@ -89,8 +94,23 @@ func (s *Server) ReceiveFromClient(c *net.Conn) {
 			if (messages[0] == "QUERY") {
 				index,e := strconv.Atoi(messages[1])
 				utility.CheckError(e, "[SERVER] ")
-				data := s.DataProvider.GetTransactionData(index)
+				data := s.DataHost.GetTransactionData(index)
 				go s.SendToClient(c, strconv.Itoa(data))
+			} else if (messages[0] == "RUN") {
+				s.DataHost.Run()
+			} else if (messages[0] == "CONNECT") {
+				index,e := strconv.Atoi(messages[1])
+				utility.CheckError(e, "[SERVER] ")
+				s.DataHost.ConnectById("tcp", index)
+			} else if (messages[0] == "HASFINISHED") {
+				if (s.DataHost.HasFinished()) {
+					go s.SendToClient(c, "TRUE")
+				} else {
+					go s.SendToClient(c, "FALSE")
+				}
+			} else if (messages[0] == "SHUTDOWN") {
+				s.DataHost.ShutDown()
+				os.Exit(0)
 			} else {
 				//fmt.Println("[SERVER ", (*s.Listener).Addr().String(), "] Received from [CLIENT ", (*c).LocalAddr().String(), " ] ", msg)
 				go s.SendToClient(c, "Reply to" + msg)

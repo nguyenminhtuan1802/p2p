@@ -55,7 +55,7 @@ func CreateP2PNetwork(size int, transactionLen int, key int, options *consensus.
 			if j == i {
 				continue
 			}
-			net.Nodes[i].Connect(net.Nodes[j])
+			net.Nodes[i].ConnectToNode(net.Nodes[j])
 		}
 	}
 

@@ -26,16 +26,25 @@ func (c *Client) Connect() {
 	utility.CheckError(err, "[CLIENT] Connect Exception")
 
 	c.Connection = &connection
-	fmt.Println("[CLIENT] Connect Successful")
+	//fmt.Println("[CLIENT] Connect Successful")
 }
 
 func (c *Client) Send(msg string) {
+	// Wait for valid connection
+	for (c.Connection != nil) {
+		break
+	}
 	err := gob.NewEncoder(*c.Connection).Encode(msg)
 	//fmt.Println("[CLIENT ", (*c.Connection).LocalAddr().String(), "] Sent: ", msg)
 	utility.CheckError(err, "[CLIENT] Send Exception")
 }
 
 func (c *Client) ReceiveOnce() int {
+	// Wait for valid connection
+	for (c.Connection != nil) {
+		break
+	}
+
 	// receive 1 message and return
 	var msg string
 
@@ -44,6 +53,12 @@ func (c *Client) ReceiveOnce() int {
 		if err != nil {
 			//fmt.Println("[SERVER] Receveid from client error:]", err)
 		} else {
+			if (msg == "TRUE") {
+				return 1
+			} else if (msg == "FALSE") {
+				return 0
+			}
+			
 			res, err := strconv.Atoi(msg)
 			if err == nil {				
 				//fmt.Println("[CLIENT ", (*c.Connection).LocalAddr().String(), "] Received:", msg)
@@ -54,8 +69,11 @@ func (c *Client) ReceiveOnce() int {
 }
 
 func (c *Client) Receive() {
+	// Wait for valid connection
+	for (c.Connection != nil) {
+		break
+	}
 	var msg string
-
 	for {
 		err := gob.NewDecoder(*c.Connection).Decode(&msg)
 		if err != nil {
