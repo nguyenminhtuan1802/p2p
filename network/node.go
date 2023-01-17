@@ -11,8 +11,6 @@ import (
 // A node represents a peer in P2P network
 // Node contains a server that listens to peer node request 
 // Clients in a node are used to send request to this node's peers
-// Note: Channel provides data to respond to peers' requests. In this
-//       example the data is transaction id, but channel can support other data types
 type Node struct {
 	Protocol 				string
 	Id       				int
@@ -20,7 +18,6 @@ type Node struct {
 	Clients  				map[int]*Client
 	PublicTransactionList	*transaction.TransactionList
 	PrivateTransactionList	*transaction.TransactionList
-	Channel					chan int
 	Validator				ConsensusValidator
 	FinishRunning			bool
 }
@@ -32,7 +29,6 @@ func NodeConstructor(protocol string, id int,
 	node.Protocol = protocol
 	node.Id = id
 	node.Clients = make(map[int]*Client)
-	node.Channel = make(chan int, 1)
 
 	node.PrivateTransactionList = privateTrans
 	node.PublicTransactionList = publicTrans
@@ -93,9 +89,11 @@ func (n *Node) ConnectById(protocol string, id int) {
 func (n *Node) PingAllConnections() {
 	var i = 0
 	for _, v := range n.Clients {
-		v.Send("Ping from Node " + strconv.Itoa(n.Id) + " to Node " + v.Address)
-		i++
-		go v.Receive()
+		go v.Send("Ping from Node " + strconv.Itoa(n.Id) + " to Node " + v.Address)		
+		reply := v.ReceiveOnce().(string)
+		if (reply != "") {
+			i++
+		}
 	}
 	fmt.Println("[NODE ", n.Id, "] has", i, " connections")
 }

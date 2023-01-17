@@ -57,8 +57,10 @@ func Test_200Nodes_200Processes(t *testing.T) {
 		count := 0
 		for i := 0; i < nodeNum; i++ {
 			go net.Client[i].Send("HASFINISHED")
-			finished := net.Client[i].ReceiveOnce()
-			count += finished
+			finished := net.Client[i].ReceiveOnce().(string)
+			if (finished == "TRUE") {
+				count++
+			}
 		}
 		if (count == nodeNum) {
 			break

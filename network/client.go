@@ -39,7 +39,7 @@ func (c *Client) Send(msg string) {
 	utility.CheckError(err, "[CLIENT] Send Exception")
 }
 
-func (c *Client) ReceiveOnce() int {
+func (c *Client) ReceiveOnce() interface{} {
 	// Wait for valid connection
 	for (c.Connection != nil) {
 		break
@@ -52,17 +52,13 @@ func (c *Client) ReceiveOnce() int {
 		err := gob.NewDecoder(*c.Connection).Decode(&msg)
 		if err != nil {
 			//fmt.Println("[SERVER] Receveid from client error:]", err)
-		} else {
-			if (msg == "TRUE") {
-				return 1
-			} else if (msg == "FALSE") {
-				return 0
-			}
-			
+		} else {			
 			res, err := strconv.Atoi(msg)
 			if err == nil {				
 				//fmt.Println("[CLIENT ", (*c.Connection).LocalAddr().String(), "] Received:", msg)
 				return res
+			} else {
+				return msg
 			}
 		}
 	}

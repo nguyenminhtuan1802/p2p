@@ -74,7 +74,7 @@ func (validator *SnowballConsensusValidator) Update() bool {
 	for _, peer := range peersToQuery {
 		// Ask peer
 		go peer.Send("QUERY," + strconv.Itoa(transactionIndex))
-		reply := peer.ReceiveOnce()
+		reply := peer.ReceiveOnce().(int)
 		val, ok := responseFreqMap[reply]
 		if ok {
 			responseFreqMap[reply] = val + 1
